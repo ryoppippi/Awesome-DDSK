@@ -1,0 +1,86 @@
+name: Docker Build & Test
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    if: startsWith(github.head_ref, 'renovate/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build & Run Docker images for affected languages
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Get all changed files in this PR
+          CHANGED_FILES=$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}") || true
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "No files changed, skipping"
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          echo ""
+
+          # Extract unique top-level directories (language dirs) from changed files
+          TARGET_DIRS=""
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            TOP_DIR=$(echo "$file" | cut -d'/' -f1)
+            # Skip top-level files (README.md, renovate.json5, .github, .gitignore, etc.)
+            if echo "$file" | grep -q '/'; then
+              if [ -f "${TOP_DIR}/Dockerfile" ]; then
+                # Check if already added
+                if ! echo "$TARGET_DIRS" | grep -qw "$TOP_DIR"; then
+                  TARGET_DIRS="$TARGET_DIRS $TOP_DIR"
+                fi
+              fi
+            fi
+          done <<< "$CHANGED_FILES"
+
+          if [ -z "$TARGET_DIRS" ]; then
+            echo "No language directories with Dockerfiles were affected, skipping build"
+            exit 0
+          fi
+
+          echo "Target directories to build:${TARGET_DIRS}"
+          echo ""
+
+          FAILED=0
+          for LANG_DIR in $TARGET_DIRS; do
+            TAG=$(echo "$LANG_DIR" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')
+
+            echo "::group::📦 Building $LANG_DIR"
+            echo "docker build -t ddsk:${TAG} ${LANG_DIR}"
+            if docker build -t "ddsk:${TAG}" "${LANG_DIR}"; then
+              echo "::endgroup::"
+              echo "::group::▶️ Running $LANG_DIR"
+              if docker run --rm "ddsk:${TAG}"; then
+                echo "✅ $LANG_DIR: build and run succeeded"
+              else
+                echo "::error::$LANG_DIR: docker run failed"
+                FAILED=1
+              fi
+              echo "::endgroup::"
+            else
+              echo "::error::$LANG_DIR: docker build failed"
+              FAILED=1
+              echo "::endgroup::"
+            fi
+          done
+
+          if [ "$FAILED" = "1" ]; then
+            exit 1
+          fi
+          echo "✅ All Docker builds and runs passed"

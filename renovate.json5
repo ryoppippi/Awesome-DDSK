@@ -17,6 +17,12 @@
 
   packageRules: [
     {
+      description: "Minor/patch updates: CI通過後に自動マージ",
+      matchUpdateTypes: ["minor", "patch"],
+      automerge: true,
+      platformAutomerge: true,
+    },
+    {
       description: "Zig compiler version",
       matchManagers: ["custom.regex"],
       matchFileNames: ["Zig/Dockerfile"],
