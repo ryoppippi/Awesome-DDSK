@@ -5,18 +5,21 @@ const MASK = 0b1111_1111_1111;
 
 const ddsk = [_][]const u8{ "ドド", "スコ" };
 
-pub fn main() !void {
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
-    var rand = std.rand.DefaultPrng.init(@intCast(u64, std.time.milliTimestamp()));
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+
+    var writer = std.Io.File.stdout().writer(io, &.{});
+    const stdout = &writer.interface;
+    const now = std.Io.Timestamp.now(io, .real);
+    var rng: std.Random.DefaultPrng = .init(@bitCast(now.toMilliseconds()));
+    const rand = rng.random();
 
     var buffer: usize = 0;
     while (buffer != DDSK) {
-        const index = rand.random().int(usize) % ddsk.len;
-        try stdout.print("{s}", .{ddsk[index]});
+        const index = rand.uintLessThan(usize, ddsk.len);
+        try stdout.writeAll(ddsk[index]);
         buffer = (buffer << 1) & MASK | index;
     }
-    try stdout.print("ラブ注入♡\n", .{});
-    try bw.flush();
+    try stdout.writeAll("ラブ注入♡\n");
+    try stdout.flush();
 }

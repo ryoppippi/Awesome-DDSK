@@ -1,17 +1,22 @@
-FROM alpine:edge as builder
+FROM alpine:edge AS builder
 
 RUN apk update && \
     apk add --no-cache curl
 
-RUN curl -Lo zig.tar.xz https://ziglang.org/builds/zig-linux-x86_64-0.10.0-dev.3456+40babaa53.tar.xz
-RUN mkdir zig && tar xvf zig.tar.xz -C zig --strip-components 1
-ENV PATH $PATH:/zig
+ARG ZIG_VERSION=0.16.0
 
-RUN mkdir /test
-WORKDIR /test
+RUN curl -Lo zig.tar.xz https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz
+RUN mkdir zig && tar xvf zig.tar.xz -C zig --strip-components 1
+ENV PATH=$PATH:/zig
+
+WORKDIR /build
 COPY ./build.zig .
 COPY ./src/main.zig ./src/
 
-RUN zig build -Drelease-safe=true
+RUN zig build -Doptimize=ReleaseSafe
 
-ENTRYPOINT [ "zig", "build", "run", "-Drelease-safe=true" ]
+FROM gcr.io/distroless/static-debian13
+
+COPY --from=builder /build/zig-out/bin/ddsk /ddsk
+
+ENTRYPOINT [ "/ddsk" ]
